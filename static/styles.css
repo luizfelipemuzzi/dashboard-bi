@@ -742,3 +742,78 @@ button:hover {
 }html, body {
     background: radial-gradient(circle at top, #0b1220, #020617);
 }
+/* ── EXTERNAL LINK BUTTONS ─────────────────────────────────────── */
+.ext-link-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--accent2);
+    text-decoration: none;
+    background: transparent;
+    transition: all 0.15s;
+}
+.ext-link-btn:hover {
+    background: rgba(59,130,246,0.1);
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+/* ── NEWS CARD ─────────────────────────────────────────────────── */
+.news-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: border-color 0.15s;
+}
+.news-card:hover { border-color: var(--border2); }
+.news-card a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 12px;
+    line-height: 1.5;
+    font-weight: 500;
+}
+.news-card a:hover { color: var(--accent2); }
+.news-meta {
+    display: flex;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+}
+.news-source-priority { color: var(--accent2); }
+
+/* ── INDICATOR ROW (analysis panel) ───────────────────────────── */
+.ind-analysis-row {
+    display: grid;
+    grid-template-columns: 130px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-family: var(--mono);
+    font-size: 11px;
+}
+.ind-analysis-name { color: var(--text2); }
+.ind-analysis-desc { color: var(--text3); font-size: 10px; }
+.ind-analysis-signal {
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.sig-tag-buy  { background: rgba(16,217,136,0.15); color: var(--green); }
+.sig-tag-sell { background: rgba(240,74,90,0.15);  color: var(--red);   }
+.sig-tag-neu  { background: var(--border);          color: var(--text3); }

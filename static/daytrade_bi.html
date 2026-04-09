@@ -308,6 +308,74 @@
               aria-label="Estocástico">Estocástico</canvas></div>
         </div>
 
+        <!-- ANÁLISE COMPLETA -->
+        <div class="chart-card" id="analysis-panel">
+          <div class="chart-header">
+            <div class="chart-header-left">
+              <span class="chart-label">📊 Análise Completa &amp; Recomendação</span>
+              <span class="chart-badge badge-neu" id="rec-badge">Aguardando...</span>
+            </div>
+            <button class="t-btn" id="analysis-toggle" onclick="toggleAnalysis()" style="font-size:10px;">▼ Expandir</button>
+          </div>
+
+          <!-- RECOMENDAÇÃO PRINCIPAL -->
+          <div id="analysis-body" style="display:none;">
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+              <!-- Score card -->
+              <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;">
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.1em;margin-bottom:8px;">SCORE TÉCNICO</div>
+                <div id="rec-score-display" style="font-family:var(--mono);font-size:42px;font-weight:700;">—</div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:4px;">de -10 a +10</div>
+                <div style="margin-top:12px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
+                  <div id="rec-score-bar" style="height:100%;border-radius:3px;transition:width .6s,background .6s;"></div>
+                </div>
+              </div>
+              <!-- Recomendação textual -->
+              <div id="rec-text-card" style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;">
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.1em;margin-bottom:8px;">RECOMENDAÇÃO</div>
+                <div id="rec-main-label" style="font-family:var(--mono);font-size:20px;font-weight:700;margin-bottom:8px;">—</div>
+                <div id="rec-summary" style="font-size:12px;color:var(--text2);line-height:1.6;">—</div>
+              </div>
+            </div>
+
+            <!-- DETALHAMENTO DOS INDICADORES -->
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.1em;margin-bottom:10px;">DETALHAMENTO DOS SINAIS</div>
+            <div id="rec-indicators" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;"></div>
+
+            <!-- COMO CHEGAMOS A ESTA ANÁLISE -->
+            <details style="margin-bottom:16px;">
+              <summary style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.1em;cursor:pointer;padding:8px 0;border-top:1px solid var(--border);">
+                ❓ COMO CHEGAMOS A ESTA RECOMENDAÇÃO — clique para expandir
+              </summary>
+              <div id="rec-methodology" style="margin-top:12px;font-size:12px;color:var(--text2);line-height:1.7;background:var(--bg3);border-radius:8px;padding:14px;"></div>
+            </details>
+
+            <!-- AVISO DE RISCO -->
+            <div style="background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.25);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:11px;color:var(--amber);font-family:var(--mono);line-height:1.6;">
+              ⚠ Esta análise é estritamente técnica e algorítmica. Não considera fundamentos da empresa, cenário macroeconômico, liquidez individual ou perfil de risco do investidor.
+              <strong>Não constitui recomendação de investimento.</strong> Consulte um profissional certificado antes de operar.
+            </div>
+
+            <!-- LINKS DE NOTÍCIAS -->
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.1em;margin-bottom:10px;">📰 NOTÍCIAS &amp; FONTES EXTERNAS</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+              <a id="link-infomoney" href="#" target="_blank" rel="noopener" class="ext-link-btn">InfoMoney ↗</a>
+              <a id="link-reuters" href="#" target="_blank" rel="noopener" class="ext-link-btn">Reuters ↗</a>
+              <a id="link-yahoo" href="#" target="_blank" rel="noopener" class="ext-link-btn">Yahoo Finance ↗</a>
+              <a id="link-tradingview" href="#" target="_blank" rel="noopener" class="ext-link-btn">TradingView ↗</a>
+              <a id="link-valor" href="#" target="_blank" rel="noopener" class="ext-link-btn">Valor Econômico ↗</a>
+              <a id="link-investing" href="#" target="_blank" rel="noopener" class="ext-link-btn">Investing.com ↗</a>
+            </div>
+
+            <!-- FEED DE NOTÍCIAS -->
+            <div id="news-feed" style="display:flex;flex-direction:column;gap:8px;">
+              <div style="color:var(--text3);font-size:11px;font-family:var(--mono);">Carregando notícias...</div>
+            </div>
+
+          </div><!-- /analysis-body -->
+        </div><!-- /analysis-panel -->
+
         <!-- HISTORY TABLE -->
         <div class="chart-card">
           <div class="chart-header"><span class="chart-label">Histórico de Candles Recentes</span></div>

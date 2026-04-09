@@ -635,3 +635,343 @@ function fmtVol(v) {
 // ===================== INIT =====================
 setupAutoRefresh();
 loadData();
+// ===================== ANÁLISE COMPLETA =====================
+
+let analysisOpen = false;
+
+function toggleAnalysis() {
+    analysisOpen = !analysisOpen;
+    document.getElementById('analysis-body').style.display = analysisOpen ? 'block' : 'none';
+    document.getElementById('analysis-toggle').textContent = analysisOpen ? '▲ Recolher' : '▼ Expandir';
+    if (analysisOpen && STATE.candles.length) runFullAnalysis();
+}
+
+// Chamado automaticamente após loadData()
+function runFullAnalysis() {
+    if (!analysisOpen || !STATE.candles.length) return;
+    const c   = STATE.candles;
+    const cls = c.map(x => x.c);
+    buildAnalysisPanel(c, cls);
+    updateExternalLinks();
+    fetchAndRenderNews();
+}
+
+// ─── Construção do painel ──────────────────────────────────────────────────
+function buildAnalysisPanel(c, closes) {
+    const n    = closes.length - 1;
+    const p1   = +document.getElementById('ma1').value;
+    const p2   = +document.getElementById('ma2').value;
+    const bbDv = +document.getElementById('bbdev').value;
+
+    const ma1v  = sma(closes, p1);
+    const ma2v  = sma(closes, p2);
+    const rsiV  = calcRSI(closes);
+    const { macdLine, signal: macdSig, hist: macdHist } = calcMACD(closes);
+    const bb    = calcBollinger(closes, 20, bbDv);
+    const stoch = calcStochastic(c);
+    const atr   = calcATR(c);
+    const vwap  = calcVWAP(c);
+
+    const last = c[n];
+    const prev = c[n - 1] || c[n];
+
+    const lma1  = ma1v[n];
+    const lma2  = ma2v[n];
+    const lrsi  = rsiV[n];
+    const lmacd = macdLine[n];
+    const lsig  = macdSig[n];
+    const lhist = macdHist[n];
+    const phist = macdHist[n - 1];
+    const lbbUp = bb.upper[n];
+    const lbbDn = bb.lower[n];
+    const lbbMd = bb.mid[n];
+    const lstk  = stoch.k[n];
+    const lstkD = stoch.d[n];
+    const latr  = atr[n];
+    const lvwap = vwap[n];
+
+    const price = last.c;
+
+    // ── Score composto (máx ±10) ──────────────────────────────────────────
+    let score = 0;
+    const signals = [];
+
+    // 1. Tendência MM
+    if (lma1 && lma2) {
+        const cross   = lma1 > lma2;
+        const prevCrs = ma1v[n-1] && ma2v[n-1] && ma1v[n-1] < ma2v[n-1] && lma1 >= lma2;
+        const prevCrsDn = ma1v[n-1] && ma2v[n-1] && ma1v[n-1] > ma2v[n-1] && lma1 <= lma2;
+        const delta = cross ? 2 : -2;
+        score += delta + (prevCrs ? 1 : 0) + (prevCrsDn ? -1 : 0);
+        signals.push({
+            name: `MM${p1} × MM${p2}`,
+            value: `${lma1?.toFixed(2)} / ${lma2?.toFixed(2)}`,
+            signal: cross ? 'buy' : 'sell',
+            label: cross ? (prevCrs ? 'Cruzamento de alta recente' : 'MM rápida acima — tendência positiva') : (prevCrsDn ? 'Cruzamento de baixa recente' : 'MM rápida abaixo — tendência negativa'),
+            points: delta,
+            explain: `Médias móveis comparam a velocidade do preço em ${p1} e ${p2} períodos. Quando a MM${p1} cruza acima da MM${p2}, sinaliza aceleração de alta. Abaixo, sinaliza pressão vendedora.`,
+        });
+    }
+
+    // 2. RSI
+    if (lrsi != null) {
+        let rDelta = 0, rLabel = '', rSig = 'neu';
+        if (lrsi < 30)       { rDelta = 2; rLabel = `Sobrevendido (${lrsi.toFixed(1)}) — potencial reversão de alta`; rSig = 'buy'; }
+        else if (lrsi < 45)  { rDelta = 1; rLabel = `Região de força compradora (${lrsi.toFixed(1)})`; rSig = 'buy'; }
+        else if (lrsi > 70)  { rDelta = -2; rLabel = `Sobrecomprado (${lrsi.toFixed(1)}) — potencial realização`; rSig = 'sell'; }
+        else if (lrsi > 55)  { rDelta = -1; rLabel = `Pressão vendedora moderada (${lrsi.toFixed(1)})`; rSig = 'sell'; }
+        else                  { rDelta = 0; rLabel = `RSI neutro (${lrsi.toFixed(1)}) — sem viés claro`; rSig = 'neu'; }
+        score += rDelta;
+        signals.push({
+            name: 'RSI (14)',
+            value: lrsi.toFixed(1),
+            signal: rSig,
+            label: rLabel,
+            points: rDelta,
+            explain: 'O RSI mede a força relativa dos movimentos de alta vs baixa nos últimos 14 períodos. Abaixo de 30 indica ativo sobrevendido (comprado demais pelos vendedores), acima de 70, sobrecomprado. Valores extremos frequentemente precedem reversões.',
+        });
+    }
+
+    // 3. MACD
+    if (lmacd != null && lsig != null) {
+        const above = lmacd > lsig;
+        const histRising = lhist != null && phist != null && lhist > phist;
+        const mDelta = above ? 1 : -1;
+        const hDelta = histRising ? 1 : -1;
+        score += mDelta + hDelta;
+        signals.push({
+            name: 'MACD (12,26,9)',
+            value: `${lmacd.toFixed(3)} / ${lsig.toFixed(3)}`,
+            signal: above ? 'buy' : 'sell',
+            label: above
+                ? (histRising ? 'MACD acima do sinal e histograma crescente — momentum positivo forte' : 'MACD acima do sinal — viés de alta')
+                : (!histRising ? 'MACD abaixo do sinal e histograma caindo — momentum negativo' : 'MACD abaixo do sinal — viés de baixa'),
+            points: mDelta + hDelta,
+            explain: 'O MACD compara duas médias exponenciais (12 e 26 períodos). A diferença entre elas forma a linha MACD; a média de 9 períodos do MACD é o "sinal". Quando MACD cruza acima do sinal, é bullish. O histograma mostra a intensidade do momentum.',
+        });
+    }
+
+    // 4. Bollinger Bands
+    if (lbbUp && lbbDn && lbbMd) {
+        const bandWidth = (lbbUp - lbbDn) / lbbMd;
+        let bSig = 'neu', bLabel = '', bDelta = 0;
+        if (price < lbbDn) { bSig = 'buy'; bLabel = `Preço abaixo da banda inferior (R$${lbbDn.toFixed(2)}) — região de sobrevenda estatística`; bDelta = 1; }
+        else if (price > lbbUp) { bSig = 'sell'; bLabel = `Preço acima da banda superior (R$${lbbUp.toFixed(2)}) — região de sobrecompra estatística`; bDelta = -1; }
+        else if (price > lbbMd) { bSig = 'buy'; bLabel = `Preço na metade superior das bandas — pressão compradora`; bDelta = 0; }
+        else { bSig = 'sell'; bLabel = `Preço na metade inferior das bandas — pressão vendedora`; bDelta = 0; }
+        const bwLabel = bandWidth < 0.04 ? ' · Bandas estreitas (possível movimento brusco próximo)' : '';
+        score += bDelta;
+        signals.push({
+            name: `Bollinger (20,${bbDv}σ)`,
+            value: `${lbbDn.toFixed(2)} — ${lbbUp.toFixed(2)}`,
+            signal: bSig,
+            label: bLabel + bwLabel,
+            points: bDelta,
+            explain: `As Bandas de Bollinger são envelopes de ${bbDv} desvios-padrão acima e abaixo da MM(20). Cerca de 95% dos preços ficam dentro das bandas. Rompimentos podem sinalizar breakout ou reversão. Bandas estreitas indicam baixa volatilidade — frequentemente precede movimentos explosivos.`,
+        });
+    }
+
+    // 5. Estocástico
+    if (lstk != null) {
+        let sDelta = 0, sSig = 'neu', sLabel = '';
+        if (lstk < 20)      { sDelta = 1; sSig = 'buy'; sLabel = `Estocástico sobrevendido (${lstk.toFixed(1)}) — potencial reversão`; }
+        else if (lstk > 80) { sDelta = -1; sSig = 'sell'; sLabel = `Estocástico sobrecomprado (${lstk.toFixed(1)}) — pressão de realização`; }
+        else if (lstkD && lstk > lstkD) { sSig = 'buy'; sLabel = `%K (${lstk.toFixed(1)}) acima de %D — momentum comprador`; }
+        else { sSig = 'sell'; sLabel = `%K (${lstk?.toFixed(1)}) abaixo de %D — momentum vendedor`; }
+        score += sDelta;
+        signals.push({
+            name: 'Estocástico (14,3)',
+            value: `%K ${lstk.toFixed(1)} / %D ${lstkD?.toFixed(1) || '—'}`,
+            signal: sSig,
+            label: sLabel,
+            points: sDelta,
+            explain: 'O Estocástico compara o fechamento atual com a faixa de preços dos últimos 14 períodos. %K é a linha rápida, %D é sua média de 3 períodos. Abaixo de 20 = sobrevendido, acima de 80 = sobrecomprado.',
+        });
+    }
+
+    // 6. VWAP
+    if (lvwap) {
+        const aboveVwap = price > lvwap;
+        const vDelta = aboveVwap ? 1 : -1;
+        score += vDelta;
+        signals.push({
+            name: 'VWAP',
+            value: `R$${lvwap.toFixed(2)}`,
+            signal: aboveVwap ? 'buy' : 'sell',
+            label: aboveVwap
+                ? `Preço (R$${price.toFixed(2)}) acima do VWAP — compradores no controle do dia`
+                : `Preço (R$${price.toFixed(2)}) abaixo do VWAP — vendedores no controle do dia`,
+            points: vDelta,
+            explain: 'O VWAP (Volume Weighted Average Price) é o preço médio ponderado pelo volume. É a referência usada por fundos e institucionais. Preço acima = pressão compradora institucional; abaixo = pressão vendedora.',
+        });
+    }
+
+    // 7. ATR — volatilidade
+    if (latr) {
+        const atrPct = (latr / price * 100).toFixed(2);
+        signals.push({
+            name: 'ATR (14) — Volatilidade',
+            value: `R$${latr.toFixed(3)} (${atrPct}%)`,
+            signal: 'neu',
+            label: `Amplitude média de movimento: R$${latr.toFixed(2)} por período (${atrPct}% do preço)`,
+            points: 0,
+            explain: 'O ATR (Average True Range) mede a volatilidade real do ativo nos últimos 14 períodos. Útil para dimensionar stops e alvos: um stop razoável costuma ser 1×ATR a 2×ATR abaixo do ponto de entrada.',
+        });
+    }
+
+    // ── Score final ────────────────────────────────────────────────────────
+    score = Math.max(-10, Math.min(10, score));
+
+    // ── Label e resumo ─────────────────────────────────────────────────────
+    let recLabel, recColor, recBg, recSummary;
+    if (score >= 5) {
+        recLabel = '▲ COMPRA FORTE';
+        recColor = 'var(--green)';
+        recBg = 'rgba(16,217,136,0.08)';
+        recSummary = `A maioria dos indicadores técnicos aponta para pressão compradora consistente. O score ${score}/10 indica viés positivo relevante. Considere entradas em pullbacks para o VWAP ou bandas intermediárias, com stop abaixo da mínima recente (≈ 1×ATR).`;
+    } else if (score >= 2) {
+        recLabel = '↗ VIÉS DE ALTA';
+        recColor = 'var(--accent2)';
+        recBg = 'rgba(96,165,250,0.08)';
+        recSummary = `Mais indicadores positivos do que negativos (score ${score}/10). Cenário levemente favorável para compradores, mas sem confirmação plena. Aguarde rompimento de resistência ou maior confluência antes de operar.`;
+    } else if (score <= -5) {
+        recLabel = '▼ VENDA FORTE';
+        recColor = 'var(--red)';
+        recBg = 'rgba(240,74,90,0.08)';
+        recSummary = `A maioria dos indicadores técnicos aponta para pressão vendedora consistente. Score ${score}/10. Evite posições compradas. Se já estiver comprado, avalie redução de exposição. Potencial alvo nas bandas inferiores.`;
+    } else if (score <= -2) {
+        recLabel = '↘ VIÉS DE BAIXA';
+        recColor = 'var(--red)';
+        recBg = 'rgba(240,74,90,0.06)';
+        recSummary = `Mais indicadores negativos do que positivos (score ${score}/10). Cenário levemente desfavorável. Cautela com compras. Aguarde sinais de reversão (RSI sobrevendido + cruzamento MACD) antes de entrar.`;
+    } else {
+        recLabel = '⏸ NEUTRO';
+        recColor = 'var(--amber)';
+        recBg = 'rgba(245,166,35,0.06)';
+        recSummary = `Os indicadores técnicos estão divididos (score ${score}/10). Sem viés definido. Momento de observar: aguarde rompimento de suporte/resistência ou confluência de pelo menos 3 indicadores na mesma direção.`;
+    }
+
+    // ── Renderiza score ────────────────────────────────────────────────────
+    const scoreEl = document.getElementById('rec-score-display');
+    scoreEl.textContent = (score > 0 ? '+' : '') + score;
+    scoreEl.style.color = recColor;
+
+    const barEl = document.getElementById('rec-score-bar');
+    const pct = ((score + 10) / 20 * 100).toFixed(1);
+    barEl.style.width = pct + '%';
+    barEl.style.background = recColor;
+
+    // ── Renderiza recomendação ─────────────────────────────────────────────
+    const recBadge = document.getElementById('rec-badge');
+    recBadge.textContent = recLabel;
+    recBadge.style.background = recBg;
+    recBadge.style.color = recColor;
+    recBadge.style.border = `1px solid ${recColor}`;
+
+    const recCard = document.getElementById('rec-text-card');
+    recCard.style.background = recBg;
+    recCard.style.border = `1px solid ${recColor}40`;
+
+    document.getElementById('rec-main-label').style.color = recColor;
+    document.getElementById('rec-main-label').textContent = recLabel;
+    document.getElementById('rec-summary').textContent = recSummary;
+
+    // ── Renderiza indicadores individuais ──────────────────────────────────
+    const indContainer = document.getElementById('rec-indicators');
+    indContainer.innerHTML = signals.map(s => `
+      <div class="ind-analysis-row" title="${s.explain}">
+        <span class="ind-analysis-name">${s.name}</span>
+        <div>
+          <div style="font-size:11px;color:var(--text);">${s.label}</div>
+          <div class="ind-analysis-desc">${s.value} · Impacto: ${s.points > 0 ? '+' + s.points : s.points === 0 ? '0' : s.points} pts · 💡 ${s.explain.substring(0,80)}…</div>
+        </div>
+        <span class="ind-analysis-signal sig-tag-${s.signal}">${s.signal === 'buy' ? '▲ ALTA' : s.signal === 'sell' ? '▼ BAIXA' : '— NEUTRO'}</span>
+      </div>
+    `).join('');
+
+    // ── Metodologia ───────────────────────────────────────────────────────
+    const maxPossible = signals.filter(s => s.points !== 0).reduce((a, s) => a + Math.abs(s.points), 0) || 1;
+    document.getElementById('rec-methodology').innerHTML = `
+      <p><strong style="color:var(--text)">Como funciona o score?</strong><br>
+      Cada indicador técnico contribui com pontos positivos (sinal de alta) ou negativos (sinal de baixa). O score final varia de <strong>-10</strong> (venda intensa) a <strong>+10</strong> (compra intensa).</p>
+      <br>
+      <p><strong style="color:var(--text)">Pesos utilizados nesta análise:</strong></p>
+      <ul style="margin:8px 0 8px 16px;">
+        ${signals.filter(s => s.points !== 0).map(s =>
+          `<li><span style="color:${s.points > 0 ? 'var(--green)' : 'var(--red)'};">${s.points > 0 ? '+' + s.points : s.points} pts</span> → <strong>${s.name}</strong>: ${s.label}</li>`
+        ).join('')}
+      </ul>
+      <br>
+      <p><strong style="color:var(--text)">Score final: ${score > 0 ? '+' : ''}${score} / 10</strong> → <span style="color:${recColor}">${recLabel}</span></p>
+      <br>
+      <p style="color:var(--text3)">
+        Os indicadores de tendência (MM e MACD) têm peso maior, pois capturam o movimento estrutural do preço.
+        Osciladores (RSI, Estocástico) são confirmadores — evitam entradas em mercados já extenuados.
+        VWAP e Bollinger adicionam contexto de preço justo e volatilidade.
+        A análise usa os últimos <strong>${STATE.candles.length} candles</strong> no intervalo <strong>${STATE.interval}</strong>.
+      </p>
+    `;
+}
+
+// ─── Links externos ────────────────────────────────────────────────────────
+function updateExternalLinks() {
+    const t = STATE.ticker;
+    const clean = t.replace('.SA', '').replace('-USD', '');
+    const isUS  = !t.includes('.SA');
+    const tvSym = isUS ? `NASDAQ:${clean}` : `BMFBOVESPA:${clean}`;
+
+    document.getElementById('link-infomoney').href  = `https://www.infomoney.com.br/cotacoes/b3/${clean.toLowerCase()}/`;
+    document.getElementById('link-reuters').href    = `https://www.reuters.com/search/news?blob=${encodeURIComponent(clean)}`;
+    document.getElementById('link-yahoo').href      = `https://finance.yahoo.com/quote/${t}`;
+    document.getElementById('link-tradingview').href= `https://www.tradingview.com/symbols/${tvSym}/`;
+    document.getElementById('link-valor').href      = `https://valor.globo.com/busca/?q=${encodeURIComponent(clean)}`;
+    document.getElementById('link-investing').href  = `https://br.investing.com/search/?q=${encodeURIComponent(clean)}`;
+}
+
+// ─── Feed de notícias ──────────────────────────────────────────────────────
+async function fetchAndRenderNews() {
+    const feed = document.getElementById('news-feed');
+    feed.innerHTML = '<div style="color:var(--text3);font-size:11px;font-family:var(--mono);">Buscando notícias...</div>';
+
+    try {
+        const name = STATE.meta?.name || '';
+        const url  = `/api/news?ticker=${encodeURIComponent(STATE.ticker)}&name=${encodeURIComponent(name)}`;
+        const res  = await fetch(url);
+        const data = await res.json();
+
+        if (!data.articles || data.articles.length === 0) {
+            feed.innerHTML = '<div style="color:var(--text3);font-size:11px;font-family:var(--mono);">Nenhuma notícia encontrada para este ativo.</div>';
+            return;
+        }
+
+        feed.innerHTML = data.articles.map(a => {
+            const dateStr = a.date ? new Date(a.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+            const srcClass = a.priority ? 'news-source-priority' : '';
+            return `
+              <div class="news-card">
+                <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+                <div class="news-meta">
+                  <span class="${srcClass}">${a.source}</span>
+                  ${dateStr ? `<span>${dateStr}</span>` : ''}
+                  <a href="${a.link}" target="_blank" rel="noopener" style="color:var(--accent2);text-decoration:none;margin-left:auto;">Ler completo ↗</a>
+                </div>
+              </div>`;
+        }).join('');
+
+    } catch (e) {
+        feed.innerHTML = '<div style="color:var(--text3);font-size:11px;font-family:var(--mono);">Não foi possível carregar as notícias. Verifique a conexão com o servidor.</div>';
+    }
+}
+
+// ─── Hook: executa análise após cada loadData ──────────────────────────────
+const _origLoad = loadData;
+window.addEventListener('DOMContentLoaded', () => {
+    // Sobrescreve updateSidebar para também disparar análise
+    const _origSidebar = window.updateSidebar;
+    if (_origSidebar) {
+        window.updateSidebar = function(data) {
+            _origSidebar(data);
+            runFullAnalysis();
+        };
+    }
+});
