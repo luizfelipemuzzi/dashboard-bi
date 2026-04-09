@@ -25,8 +25,8 @@ async function fetchYahoo(ticker, interval, range) {
     const r = range || rangeMap[interval] || '1d';
 
     // 🚀 AGORA USA SEU BACKEND PYTHON
-    const url = `http://127.0.0.1:8000/api/yahoo?ticker=${encodeURIComponent(ticker)}&interval=${interval}&range=${r}`;
-
+    // const url = `http://127.0.0.1:8000/api/yahoo?ticker=${encodeURIComponent(ticker)}&interval=${interval}&range=${r}`;
+    const url = `/api/yahoo?ticker=${encodeURIComponent(ticker)}&interval=${interval}&range=${r}`;
     try {
         const res = await fetch(url);
 

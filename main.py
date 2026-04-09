@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 import requests
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,3 +43,7 @@ def get_yahoo_data(ticker: str, interval: str = "1m", range: str = "1d"):
 
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse("static/daytrade_bi.html")
