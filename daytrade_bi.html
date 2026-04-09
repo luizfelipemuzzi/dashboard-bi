@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DayTrade BI — Análise Técnica em Tempo Real</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+  <div class="loading-overlay" id="loader">
+    <div class="loading-box">
+      <div class="loading-spinner"></div>
+      <div class="loading-text" id="loader-text">Conectando ao mercado...</div>
+    </div>
+  </div>
+
+  <div class="tooltip-box" id="tooltip">
+    <div class="tt-row"><span class="tt-lbl">Hora</span><span id="tt-time">—</span></div>
+    <div class="tt-row"><span class="tt-lbl">Abertura</span><span id="tt-open">—</span></div>
+    <div class="tt-row"><span class="tt-lbl">Máxima</span><span id="tt-high">—</span></div>
+    <div class="tt-row"><span class="tt-lbl">Mínima</span><span id="tt-low">—</span></div>
+    <div class="tt-row"><span class="tt-lbl">Fechamento</span><span id="tt-close">—</span></div>
+    <div class="tt-row"><span class="tt-lbl">Volume</span><span id="tt-vol">—</span></div>
+  </div>
+
+  <div class="app">
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 16 16">
+            <path d="M1 12 L4 7 L7 9 L10 4 L13 6 L15 2" />
+            <circle cx="15" cy="2" r="1.5" />
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">DAYTRADE BI</div>
+          <div class="brand-tag">análise técnica adaptativa</div>
+        </div>
+      </div>
+
+      <div class="ticker-selector">
+        <input type="text" class="ticker-input" id="custom-ticker" placeholder="ex: MGLU3.SA" maxlength="12"
+          title="Digite ticker (adicione .SA para B3)">
+        <button class="t-btn" onclick="addCustomTicker()">+ Adicionar</button>
+        <div style="width:1px;height:24px;background:var(--border);"></div>
+        <button class="t-btn active" onclick="selectTicker('PETR4.SA', this)">PETR4</button>
+        <button class="t-btn" onclick="selectTicker('VALE3.SA', this)">VALE3</button>
+        <button class="t-btn" onclick="selectTicker('ITUB4.SA', this)">ITUB4</button>
+        <button class="t-btn" onclick="selectTicker('BBDC4.SA', this)">BBDC4</button>
+        <button class="t-btn" onclick="selectTicker('WEGE3.SA', this)">WEGE3</button>
+        <button class="t-btn" onclick="selectTicker('AAPL', this)">AAPL</button>
+      </div>
+
+      <div class="topbar-right">
+        <div class="interval-sel">
+          <button class="iv-btn active" onclick="setInterval_('1m', this)">1m</button>
+          <button class="iv-btn" onclick="setInterval_('5m', this)">5m</button>
+          <button class="iv-btn" onclick="setInterval_('15m', this)">15m</button>
+          <button class="iv-btn" onclick="setInterval_('1h', this)">1h</button>
+          <button class="iv-btn" onclick="setInterval_('1d', this)">1D</button>
+        </div>
+        <div class="live-dot">
+          <div class="dot" id="live-dot"></div><span id="last-update">—</span>
+        </div>
+        <button class="refresh-btn" id="refresh-btn" onclick="loadData()">↻ Atualizar</button>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+      <!-- SIDEBAR -->
+      <div class="sidebar">
+        <!-- PRICE HERO -->
+        <div class="sidebar-section price-hero">
+          <div class="asset-name" id="asset-full-name">—</div>
+          <div class="price-big" id="price-display">R$ —</div>
+          <div class="price-change">
+            <span id="price-chg-abs">—</span>
+            <span id="price-chg-pct">—</span>
+          </div>
+        </div>
+
+        <!-- SIGNAL -->
+        <div class="sidebar-section">
+          <div class="sidebar-title">Sinal Composto</div>
+          <div class="signal-block sig-neu" id="signal-box">
+            <div class="sig-label">AGUARDANDO DADOS</div>
+            <div class="sig-main" id="sig-main">—</div>
+            <div class="sig-sub" id="sig-sub"></div>
+          </div>
+        </div>
+
+        <!-- METRICS -->
+        <div class="sidebar-section">
+          <div class="sidebar-title">Resumo do Pregão</div>
+          <div class="metric-grid">
+            <div class="metric-card">
+              <div class="mc-label">MÁXIMA</div>
+              <div class="mc-val" id="m-high">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="mc-label">MÍNIMA</div>
+              <div class="mc-val" id="m-low">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="mc-label">ABERTURA</div>
+              <div class="mc-val" id="m-open">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="mc-label">VOLUME</div>
+              <div class="mc-val" id="m-vol">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="mc-label">AMPLITUDE</div>
+              <div class="mc-val" id="m-amp">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="mc-label">VWAP</div>
+              <div class="mc-val" id="m-vwap">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- INDICATORS -->
+        <div class="sidebar-section">
+          <div class="sidebar-title">Indicadores Técnicos</div>
+          <div class="ind-list">
+            <div class="ind-row">
+              <span class="ind-name">RSI(14)</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div class="ind-bar-wrap">
+                  <div class="ind-bar" id="rsi-bar" style="width:50%;background:var(--amber);"></div>
+                </div>
+                <span class="ind-val" id="ind-rsi">—</span>
+              </div>
+            </div>
+            <div class="ind-row">
+              <span class="ind-name">MACD</span>
+              <span class="ind-val" id="ind-macd">—</span>
+            </div>
+            <div class="ind-row">
+              <span class="ind-name">Sinal MACD</span>
+              <span class="ind-val" id="ind-macd-sig">—</span>
+            </div>
+            <div class="ind-row">
+              <span class="ind-name">BB Superior</span>
+              <span class="ind-val" id="ind-bb-up">—</span>
+            </div>
+            <div class="ind-row">
+              <span class="ind-name">BB Inferior</span>
+              <span class="ind-val" id="ind-bb-dn">—</span>
+            </div>
+            <div class="ind-row">
+              <span class="ind-name">Estocástico</span>
+              <span class="ind-val" id="ind-stoch">—</span>
+            </div>
+            <div class="ind-row">
+              <span class="ind-name">ATR(14)</span>
+              <span class="ind-val" id="ind-atr">—</span>
+            </div>
+            <div class="ind-row">
+              <span class="ind-name">MM9 vs MM21</span>
+              <span class="ind-val" id="ind-ma-cross">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- WATCHLIST -->
+        <div class="sidebar-section">
+          <div class="sidebar-title">Watchlist Rápida</div>
+          <div id="watchlist">
+            <div style="color:var(--text3);font-size:11px;font-family:var(--mono);">Adicione ativos acima...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHARTS AREA -->
+      <div class="charts-area">
+        <div class="error-banner" id="error-banner">⚠ Não foi possível carregar dados reais. Verifique conexão ou ticker
+          inválido.</div>
+
+        <!-- CONTROLS -->
+        <div class="ctrl-row">
+          <div class="ctrl-group">
+            <span class="ctrl-label">MM Rápida</span>
+            <input type="range" min="3" max="20" value="9" step="1" id="ma1"
+              oninput="document.getElementById('ma1-v').textContent=this.value;redrawCharts()">
+            <span class="ctrl-val" id="ma1-v">9</span>
+          </div>
+          <div class="ctrl-group">
+            <span class="ctrl-label">MM Lenta</span>
+            <input type="range" min="10" max="55" value="21" step="1" id="ma2"
+              oninput="document.getElementById('ma2-v').textContent=this.value;redrawCharts()">
+            <span class="ctrl-val" id="ma2-v">21</span>
+          </div>
+          <div class="ctrl-group">
+            <span class="ctrl-label">BB Desvios</span>
+            <input type="range" min="1" max="3" value="2" step="0.5" id="bbdev"
+              oninput="document.getElementById('bbdev-v').textContent=this.value;redrawCharts()">
+            <span class="ctrl-val" id="bbdev-v">2</span>
+          </div>
+          <div class="ctrl-group">
+            <span class="ctrl-label">Auto-refresh</span>
+            <select id="auto-interval" onchange="setupAutoRefresh()"
+              style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:6px;outline:none;cursor:pointer;">
+              <option value="0">Desligado</option>
+              <option value="30">30s</option>
+              <option value="60" selected>1 min</option>
+              <option value="120">2 min</option>
+              <option value="300">5 min</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- PRICE + VOLUME CHART -->
+        <div class="chart-card">
+          <div class="chart-header">
+            <div class="chart-header-left">
+              <span class="chart-label">Preço + Médias Móveis + Bollinger Bands</span>
+              <span class="chart-badge badge-neu" id="trend-badge">—</span>
+            </div>
+            <div>
+              <div>
+                <button class="t-btn" onclick="resetZoom()">Resetar Zoom</button>
+              </div>
+              <div class="legend-row">
+                <div class="leg">
+                  <div class="leg-line" style="background:#3b82f6;"></div>MM Rápida
+                </div>
+                <div class="leg">
+                  <div class="leg-line" style="background:#f5a623;"></div>MM Lenta
+                </div>
+                <div class="leg">
+                  <div class="leg-line" style="background:#a78bfa;border-style:dashed;"></div>Bollinger
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="position:relative;width:100%;height:260px;"><canvas id="priceChart" role="img"
+              aria-label="Gráfico de preço com médias móveis e bandas de Bollinger">Preço</canvas></div>
+          <div style="position:relative;width:100%;height:60px;margin-top:6px;"><canvas id="volChart" role="img"
+              aria-label="Gráfico de volume">Volume</canvas></div>
+        </div>
+
+        <!-- RSI -->
+        <div class="chart-card">
+          <div class="chart-header">
+            <span class="chart-label">RSI — Índice de Força Relativa (14)</span>
+            <div class="legend-row">
+              <div class="leg">
+                <div class="leg-line" style="background:#a78bfa;"></div>RSI
+              </div>
+              <div class="leg">
+                <div class="leg-line" style="background:#f04a5a;border-style:dashed;"></div>Sobrecompra 70
+              </div>
+              <div class="leg">
+                <div class="leg-line" style="background:#10d988;border-style:dashed;"></div>Sobrevenda 30
+              </div>
+            </div>
+          </div>
+          <div style="position:relative;width:100%;height:120px;"><canvas id="rsiChart" role="img"
+              aria-label="RSI">RSI</canvas></div>
+        </div>
+
+        <!-- MACD -->
+        <div class="chart-card">
+          <div class="chart-header">
+            <span class="chart-label">MACD</span>
+            <div class="legend-row">
+              <div class="leg">
+                <div class="leg-line" style="background:#3b82f6;"></div>Linha MACD
+              </div>
+              <div class="leg">
+                <div class="leg-line" style="background:#f5a623;"></div>Sinal
+              </div>
+              <div class="leg">
+                <div class="leg-line" style="background:#10d988;"></div>Histograma
+              </div>
+            </div>
+          </div>
+          <div style="position:relative;width:100%;height:110px;"><canvas id="macdChart" role="img"
+              aria-label="MACD">MACD</canvas></div>
+        </div>
+
+        <!-- STOCHASTIC -->
+        <div class="chart-card">
+          <div class="chart-header">
+            <span class="chart-label">Estocástico (14,3,3)</span>
+            <div class="legend-row">
+              <div class="leg">
+                <div class="leg-line" style="background:#60a5fa;"></div>%K
+              </div>
+              <div class="leg">
+                <div class="leg-line" style="background:#f5a623;"></div>%D
+              </div>
+            </div>
+          </div>
+          <div style="position:relative;width:100%;height:100px;"><canvas id="stochChart" role="img"
+              aria-label="Estocástico">Estocástico</canvas></div>
+        </div>
+
+        <!-- HISTORY TABLE -->
+        <div class="chart-card">
+          <div class="chart-header"><span class="chart-label">Histórico de Candles Recentes</span></div>
+          <div style="overflow-x:auto;">
+            <table class="hist-table" id="hist-table">
+              <thead>
+                <tr>
+                  <th>Hora/Data</th>
+                  <th>Abertura</th>
+                  <th>Máxima</th>
+                  <th>Mínima</th>
+                  <th>Fechamento</th>
+                  <th>Volume</th>
+                  <th>Variação</th>
+                </tr>
+              </thead>
+              <tbody id="hist-body">
+                <tr>
+                  <td colspan="7" style="color:var(--text3);text-align:center;">Aguardando dados...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATUS BAR -->
+    <div class="statusbar">
+      <span>📡 Fonte: Yahoo Finance (proxy público)</span>
+      <span id="sb-ticker">Ativo: —</span>
+      <span id="sb-interval">Intervalo: —</span>
+      <span id="sb-candles">Candles: —</span>
+      <span id="sb-time">Última atualização: —</span>
+      <span style="margin-left:auto;">⚠ Apenas para fins educacionais — não constitui recomendação de
+        investimento</span>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="script.js"></script>
+</body>
+
+</html>let score = 0;
+
+if (rsi < 30) score += 2;
+if (rsi > 70) score -= 2;
+if (macd > signal) score += 1;
+if (price > ma9) score += 1;
+if (price < ma21) score -= 1;
+
+if (score >= 3) sinal = "COMPRA";
+else if (score <= -3) sinal = "VENDA";
+else sinal = "NEUTRO";
