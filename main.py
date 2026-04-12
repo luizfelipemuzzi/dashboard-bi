@@ -3,15 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import requests
-import urllib.parse
+import concurrent.futures
 
-app = FastAPI()
+app = FastAPI(title="DayTrade BI")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -23,124 +22,129 @@ YAHOO_HEADERS = {
     "Referer": "https://finance.yahoo.com",
 }
 
-# ─── Proxy Yahoo Finance ───────────────────────────────────────────────────────
-@app.get("/api/yahoo")
-def get_yahoo_data(ticker: str, interval: str = "1m", range: str = "1d"):
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        f"?interval={interval}&range={range}&events=div%2Csplits"
-    )
-    try:
-        response = requests.get(url, headers=YAHOO_HEADERS, timeout=12)
-        if response.status_code != 200:
-            url2 = url.replace("query1.", "query2.")
-            response = requests.get(url2, headers=YAHOO_HEADERS, timeout=12)
-        if response.status_code != 200:
-            return {"error": f"Status {response.status_code}", "body": response.text[:300]}
-        return response.json()
-    except requests.exceptions.Timeout:
-        return {"error": "Timeout ao consultar Yahoo Finance"}
-    except Exception as e:
-        return {"error": str(e)}
+B3_POOL = [
+    "PETR4.SA","PETR3.SA","VALE3.SA","ITUB4.SA","BBDC4.SA",
+    "WEGE3.SA","ABEV3.SA","BBAS3.SA","RENT3.SA","SUZB3.SA",
+    "PRIO3.SA","RDOR3.SA","EQTL3.SA","EGIE3.SA","VIVT3.SA",
+    "RADL3.SA","JBSS3.SA","GGBR4.SA","CSAN3.SA","LREN3.SA",
+    "HAPV3.SA","MGLU3.SA","ELET3.SA","CPLE6.SA","SBSP3.SA",
+    "MXRF11.SA","HGLG11.SA","KNRI11.SA","XPML11.SA","IRDM11.SA",
+    "BOVA11.SA","SMAL11.SA","IVVB11.SA",
+]
 
-# ─── Notícias via Google News RSS ─────────────────────────────────────────────
-@app.get("/api/news")
-def get_news(ticker: str, name: str = ""):
-    """
-    Busca notícias do ativo em fontes financeiras via Google News RSS.
-    Retorna lista de artigos com título, fonte, link e data.
-    """
-    # Monta termos de busca: usa nome da empresa se disponível, senão ticker limpo
-    clean_ticker = ticker.replace(".SA", "").replace("-USD", "")
-    search_term = name if name and len(name) > 3 else clean_ticker
+def _ema_series(closes, period):
+    if len(closes) < period:
+        return []
+    k = 2.0 / (period + 1)
+    seed = sum(closes[:period]) / period
+    result = [None] * (period - 1) + [seed]
+    for v in closes[period:]:
+        result.append(v * k + result[-1] * (1 - k))
+    return result
 
-    # Fontes priorizadas na query
-    queries = [
-        f"{search_term} ação bolsa",
-        f"{search_term} stock market",
-    ]
+def _rsi(closes, period=14):
+    if len(closes) < period + 2:
+        return 50.0
+    deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+    gains  = [max(d, 0.0) for d in deltas]
+    losses = [max(-d, 0.0) for d in deltas]
+    avg_g = sum(gains[-period:]) / period
+    avg_l = sum(losses[-period:]) / period
+    if avg_l == 0:
+        return 100.0
+    rs = avg_g / avg_l
+    return round(100.0 - 100.0 / (1.0 + rs), 2)
 
-    articles = []
-    seen_links = set()
+def _compute_signal(closes):
+    n = len(closes)
+    if n < 22:
+        return {"call":"NEUTRO","score":0,"rsi":50.0,"ema9":None,"ema21":None}
+    rsi    = _rsi(closes)
+    ema9s  = _ema_series(closes, 9)
+    ema21s = _ema_series(closes, 21)
+    ema9   = ema9s[-1]  if ema9s  else closes[-1]
+    ema21  = ema21s[-1] if ema21s else closes[-1]
+    price  = closes[-1]
+    score  = 0
+    if   rsi < 40: score += 1
+    elif rsi > 60: score -= 1
+    score += 1 if ema9 > ema21 else -1
+    score += 1 if price > ema21 else -1
+    if n >= 2:
+        score += 1 if closes[-1] > closes[-2] else -1
+    call_map = {4:"COMPRA",3:"COMPRA",2:"ACUMULAR",1:"ACUMULAR",0:"NEUTRO",
+                -1:"AGUARDAR",-2:"AGUARDAR",-3:"VENDA",-4:"VENDA"}
+    return {"call":call_map.get(max(-4,min(4,score)),"NEUTRO"),
+            "score":score,"rsi":round(rsi,1),
+            "ema9":round(ema9,4),"ema21":round(ema21,4)}
 
-    for query in queries:
-        encoded = urllib.parse.quote(query)
-        rss_url = f"https://news.google.com/rss/search?q={encoded}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-
+def _fetch_one(ticker):
+    for host in ["query1","query2"]:
+        url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{ticker}"
+               f"?interval=1d&range=2mo")
         try:
-            resp = requests.get(rss_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-            if resp.status_code != 200:
+            r = requests.get(url, headers=YAHOO_HEADERS, timeout=10)
+            if r.status_code != 200:
                 continue
-
-            # Parse RSS XML manualmente (sem dependência extra)
-            xml = resp.text
-            items = xml.split("<item>")[1:]  # pula o header
-
-            for item in items[:8]:
-                def extract(tag, text):
-                    start = text.find(f"<{tag}>")
-                    end = text.find(f"</{tag}>")
-                    if start == -1 or end == -1:
-                        return ""
-                    return text[start + len(tag) + 2:end].strip()
-
-                title = extract("title", item)
-                link  = extract("link", item)
-                pub   = extract("pubDate", item)
-                source_start = item.find('<source url=')
-                source_name = ""
-                if source_start != -1:
-                    src_end = item.find("</source>", source_start)
-                    src_tag = item[source_start:src_end + 9]
-                    gt = src_tag.find(">")
-                    if gt != -1:
-                        source_name = src_tag[gt+1:].replace("</source>", "").strip()
-
-                # Remove CDATA e tags HTML do título
-                title = title.replace("<![CDATA[", "").replace("]]>", "")
-                if not title or not link or link in seen_links:
-                    continue
-
-                # Filtra fontes relevantes (prioriza financeiras)
-                PRIORITY_SOURCES = [
-                    "InfoMoney", "Reuters", "Bloomberg", "Valor Econômico",
-                    "Estadão", "Folha", "G1", "UOL Economia", "Exame",
-                    "investing.com", "MoneyTimes", "Suno", "Empiricus",
-                    "CNN Brasil", "B3", "CRI", "Broadcast"
-                ]
-                is_priority = any(s.lower() in source_name.lower() for s in PRIORITY_SOURCES)
-
-                seen_links.add(link)
-                articles.append({
-                    "title": title,
-                    "link": link,
-                    "source": source_name or "Google News",
-                    "date": pub,
-                    "priority": is_priority,
-                })
-
+            data   = r.json()
+            result = (data.get("chart") or {}).get("result") or []
+            if not result:
+                continue
+            result = result[0]
+            meta   = result.get("meta", {})
+            q      = (result.get("indicators") or {}).get("quote",[{}])[0]
+            closes = [c for c in (q.get("close") or []) if c is not None]
+            if len(closes) < 15:
+                return None
+            sig   = _compute_signal(closes)
+            prev  = meta.get("previousClose") or meta.get("chartPreviousClose") or closes[-2]
+            price = closes[-1]
+            chg   = (price - prev) / prev * 100 if prev else 0.0
+            name  = (meta.get("longName") or meta.get("shortName") or ticker.replace(".SA",""))[:28]
+            return {"ticker":ticker,"short":ticker.replace(".SA",""),"name":name,
+                    "price":round(price,2),"chg_pct":round(chg,2),**sig}
         except Exception:
             continue
+    return None
 
-    # Ordena: prioridade financeira primeiro
-    articles.sort(key=lambda x: (not x["priority"], x["date"]), reverse=False)
+@app.get("/api/scanner")
+def run_scanner():
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        futs    = [ex.submit(_fetch_one, t) for t in B3_POOL]
+        results = []
+        for f in concurrent.futures.as_completed(futs, timeout=40):
+            try:
+                r = f.result()
+                if r:
+                    results.append(r)
+            except Exception:
+                pass
+    results.sort(key=lambda x: x.get("score",0), reverse=True)
+    return {"assets": results, "total": len(results)}
 
-    return {"ticker": ticker, "articles": articles[:12]}
+@app.get("/api/yahoo")
+def get_yahoo(ticker: str, interval: str = "5m", range: str = "1d"):
+    for host in ["query1","query2"]:
+        url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{ticker}"
+               f"?interval={interval}&range={range}&events=div%2Csplits")
+        try:
+            r = requests.get(url, headers=YAHOO_HEADERS, timeout=12)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            continue
+    return {"error": "Yahoo Finance indisponível"}
 
-# ─── Health check ─────────────────────────────────────────────────────────────
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "pool_size": len(B3_POOL)}
 
-# ─── Serve frontend ───────────────────────────────────────────────────────────
 @app.get("/")
-def serve_frontend():
+def index():
     return FileResponse("static/daytrade_bi.html")
 
-@app.get("/{full_path:path}")
-def catch_all(full_path: str):
+@app.get("/{path:path}")
+def fallback(path: str):
     import os
-    f = f"static/{full_path}"
-    if os.path.isfile(f):
-        return FileResponse(f)
-    return FileResponse("static/daytrade_bi.html")
+    f = f"static/{path}"
+    return FileResponse(f) if os.path.isfile(f) else FileResponse("static/daytrade_bi.html")

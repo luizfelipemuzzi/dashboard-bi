@@ -1,34 +1,9 @@
-# Ambiente virtual
-venv/
-.env/
-
-# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Logs
-*.log
-
-# Arquivos do sistema
-.DS_Store
-Thumbs.db
-
-# IDEs
-.vscode/
-.idea/
-
-# Arquivos de ambiente
+*.py[cod]
 .env
-
-# Cache e builds
-.cache/
+venv/
+.venv/
+*.egg-info/
 dist/
 build/
-
-# Testes
-.pytest_cache/
-
-# SQLite (se usar futuramente)
-*.db
+.DS_Store
