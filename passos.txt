@@ -1,0 +1,50 @@
+# ================================
+# PASSO A PASSO - AMBIENTE PYTHON
+# ================================
+
+# 1. Criar ambiente virtual
+python -m venv venv
+
+# 2. Ativar o ambiente virtual
+
+# Windows (PowerShell)
+venv\Scripts\Activate
+
+# Windows (CMD)
+venv\Scripts\activate.bat
+
+# Linux / Mac
+source venv/bin/activate
+
+# ================================
+# INSTALAR DEPENDÊNCIAS
+# ================================
+
+# Atualizar pip (recomendado)
+python -m pip install --upgrade pip
+
+# Instalar dependências do projeto
+pip install -r requirements.txt
+
+# Caso não tenha requirements.txt, instale manualmente:
+pip install fastapi uvicorn
+
+# ================================
+# RODAR A APLICAÇÃO
+# ================================
+
+# Executar o servidor
+uvicorn main:app --reload
+
+# ================================
+# ACESSAR NO NAVEGADOR
+# ================================
+
+# API
+http://127.0.0.1:8000
+
+# ================================
+# DESATIVAR AMBIENTE VIRTUAL
+# ================================
+
+deactivate
